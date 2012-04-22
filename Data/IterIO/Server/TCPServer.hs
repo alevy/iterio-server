@@ -9,6 +9,7 @@ module Data.IterIO.Server.TCPServer (
 ) where
 
 import Control.Concurrent.MonadIO
+import Control.Concurrent.QSem
 import Control.Monad
 import qualified Data.ByteString.Lazy as L
 import qualified Network.Socket as Net
@@ -41,6 +42,7 @@ data TCPServer inp m = TCPServer {
 -- |Must execute the monadic result. Servers operating in the 'IO' Monad can
 --  use 'id'.
   , serverResultHandler :: m () -> IO ()
+  , serverConcurrency :: Int
 }
 
 instance Show (TCPServer inp m) where
@@ -57,7 +59,7 @@ instance Show (TCPServer inp m) where
 --    * Request handler set to 'id' (noop)
 --
 minimalTCPServer :: (ListLikeIO inp e, ChunkData inp) => TCPServer inp IO
-minimalTCPServer = TCPServer 0 inumNop defaultServerAcceptor id
+minimalTCPServer = TCPServer 0 inumNop defaultServerAcceptor id 50
 
 -- |This acceptor creates an 'Iter' and 'Onum' using 'handleI' and
 --  'enumHandle' respectively.
@@ -77,11 +79,15 @@ runTCPServer :: (ListLikeIO inp e,
 runTCPServer server = do
   sock <- sockListenTCP $ serverPort server
   let handler = serverResultHandler server
+  sem <- newQSem $ serverConcurrency server
   forever $ do
+    waitQSem sem
     (s, _) <- Net.accept sock
-    _ <- forkIO $ handler $ do
-      (iter, enum) <- (serverAcceptor server) s
-      enum |$ serverHandler server .| iter
+    _ <- forkIO $ do
+        handler $ do
+          (iter, enum) <- (serverAcceptor server) s
+          enum |$ serverHandler server .| iter
+        signalQSem sem
     return ()
 
 -- |Creates a simple HTTP server from an 'HTTPRequestHandler'.
