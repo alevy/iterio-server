@@ -79,15 +79,15 @@ runTCPServer :: (ListLikeIO inp e,
 runTCPServer server = do
   sock <- sockListenTCP $ serverPort server
   let handler = serverResultHandler server
-  sem <- newQSem $ serverConcurrency server
+--  sem <- newQSem $ serverConcurrency server
   forever $ do
-    waitQSem sem
+--    waitQSem sem
     (s, _) <- Net.accept sock
     _ <- forkIO $ do
         handler $ do
           (iter, enum) <- (serverAcceptor server) s
           enum |$ serverHandler server .| iter
-        signalQSem sem
+--        signalQSem sem
     return ()
 
 -- |Creates a simple HTTP server from an 'HTTPRequestHandler'.
